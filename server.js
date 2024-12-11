@@ -72,7 +72,7 @@ app.post('/upload', upload.array('image', 10), (req, res) => {
 });
 
 // Endpoint to fetch all uploaded media
-app.get("/", (req, res) => {
+app.get("/images", (req, res) => {
     const sql = 'SELECT * FROM media';
     db.query(sql, (err, result) => {
         if (err) {
