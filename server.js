@@ -42,7 +42,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Endpoint for uploading multiple images
-app.post('/upload', upload.array('image', 10), (req, res) => {
+app.post('/uploadImages', upload.array('image', 10), (req, res) => {
     console.log('Received files:', req.files);
     
     if (!req.files || req.files.length === 0) {
@@ -71,6 +71,31 @@ app.post('/upload', upload.array('image', 10), (req, res) => {
     });
 });
 
+// Endpoint to upload product data and images
+app.post('/uploadproduct', upload, (req, res) => {
+    const { productName, productPrice, discountedPrice, productDescription, selectedCategory } = req.body;
+    
+    // Validate if all required fields are present
+    if (!productName || !productPrice || !discountedPrice || !productDescription || !selectedCategory || req.files.length === 0) {
+        return res.status(400).json({ error: 'Please provide all fields and images.' });
+    }
+
+    // Map images to their file paths
+    const imagePaths = req.files.map(file => `/images/${file.filename}`);
+
+    // Insert product data into the database
+    const query = 'INSERT INTO products (name, price, discounted_price, description, category, images) VALUES (?, ?, ?, ?, ?, ?)';
+    const values = [productName, productPrice, discountedPrice, productDescription, selectedCategory, JSON.stringify(imagePaths)];
+
+    db.query(query, values, (err, result) => {
+        if (err) {
+            console.error('Error inserting product:', err);
+            return res.status(500).json({ error: 'Error inserting product data.' });
+        }
+        return res.status(200).json({ message: 'Product uploaded successfully!', productId: result.insertId });
+    });
+});
+
 // Endpoint to fetch all uploaded media
 app.get("/images", (req, res) => {
     const sql = 'SELECT * FROM media';
@@ -82,6 +107,7 @@ app.get("/images", (req, res) => {
     });
 });
 
-app.listen(8081, () => {
-    console.log("Server Running on port 8081");
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });
