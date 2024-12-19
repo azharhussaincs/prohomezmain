@@ -47,32 +47,47 @@ export const uploadProduct = (req, res) => {
 
 // Controller to store product details
 export const createProduct = (req, res) => {
+    // Validate incoming request
     const { error } = validateProduct(req.body);
     if (error) {
         return res.status(400).json({ message: error.details[0].message });
     }
 
+    // Destructure request body
     const {
         productName,
         productPrice,
-        discountedPrice,
+        discountedPrice = null, // Default to null if not provided
         productDescription,
         selectedCategory,
         selectedImages,
+        mainCategory,
     } = req.body;
 
+    // Ensure selectedImages is a valid non-empty array
     if (!Array.isArray(selectedImages) || selectedImages.length === 0) {
         return res.status(400).json({ message: 'Selected images cannot be empty.' });
     }
 
-    const featureImage = selectedImages[0]; // Extract the first image as the feature image
-    const imagesJson = JSON.stringify(selectedImages); // Convert the array of images to JSON format
+    // Extract the first image as the feature image and convert images to JSON
+    const featureImage = selectedImages[0];
+    const imagesJson = JSON.stringify(selectedImages);
 
+    // SQL query to insert product
     const sql = `
-        INSERT INTO products (productName, productPrice, discountedPrice, productDescription, selectedCategory, selectedImages, featureImage)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO products (
+            productName, 
+            productPrice, 
+            discountedPrice, 
+            productDescription, 
+            selectedCategory, 
+            mainCategory, 
+            selectedImages, 
+            featureImage
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
+    // Execute the query
     db.query(
         sql,
         [
@@ -81,14 +96,17 @@ export const createProduct = (req, res) => {
             discountedPrice,
             productDescription,
             selectedCategory,
+            mainCategory,
             imagesJson,
             featureImage,
         ],
         (err, result) => {
             if (err) {
-                console.error('Error inserting product:', err.message);
-                return res.status(500).json({ message: 'Error storing product details.' });
+                console.error('Database error:', err.message);
+                return res.status(500).json({ message: 'Error storing product details. Please try again later.' });
             }
+
+            // Success response
             res.status(201).json({
                 message: 'Product created successfully!',
                 productId: result.insertId,
