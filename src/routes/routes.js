@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import { uploadImages, getAllImages, createProduct, getProducts } from '../controllers/controllers.js';
+import { authenticate } from '../middleware/authmiddleware.js';
 
 const router = express.Router();
 
@@ -16,11 +17,11 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-router.post('/uploadImages', upload.array('image', 10), uploadImages);
+router.post('/uploadImages', authenticate, upload.array('image', 10), uploadImages);
 
-router.get('/images', getAllImages);
+router.get('/images', authenticate, getAllImages);
 
-router.post('/createproduct', createProduct);
+router.post('/createproduct', authenticate, createProduct);
 
 router.get('/products', getProducts);
 

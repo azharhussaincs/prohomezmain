@@ -90,7 +90,7 @@ export const loginVendor = (req, res) => {
     // Validate request data
     const { error } = validateLogin(req.body);
     if (error) {
-        return res.status(400).send({ message: error.details[0].message });
+        return res.status(400).json({ message: error.details[0].message });
     }
 
     const { email, password } = req.body;
@@ -98,36 +98,52 @@ export const loginVendor = (req, res) => {
     const query = 'SELECT * FROM vendors WHERE email = ?';
     db.query(query, [email], async (err, results) => {
         if (err) {
-            res.status(500).send({ message: 'Database error', error: err });
-        } else if (results.length === 0) {
-            res.status(404).send({ message: 'Vendor not found!' });
-        } else {
-            const vendor = results[0];
-            const isPasswordMatch = await bcrypt.compare(password, vendor.password);
+            console.error('Database error:', err);
+            return res.status(500).json({ message: 'Internal server error' });
+        }
 
-            if (isPasswordMatch) {
-                // Create a token
-                const token = jwt.sign({ id: vendor.id }, 'your_secret_key', { expiresIn: '1h' });
+        if (results.length === 0) {
+            return res.status(404).json({ message: 'Vendor not found!' });
+        }
 
-                // Send only required fields
-                const vendorData = {
+        const vendor = results[0];
+        const isPasswordMatch = await bcrypt.compare(password, vendor.password);
+
+        if (!isPasswordMatch) {
+            return res.status(401).json({ message: 'Invalid email or password!' });
+        }
+
+        try {
+            // Create a token with more details if necessary
+            const token = jwt.sign(
+                {
+                    id: vendor.id,
                     store_id: vendor.store_id,
-                    store_name: vendor.store_name,
                     email: vendor.email,
-                    brand_type: vendor.brand_type,
-                    first_name: vendor.first_name,
-                    last_name: vendor.last_name,
-                    store_phone: vendor.store_phone,
-                };
+                },
+                process.env.JWT_SECRET, // Use secret from environment variables
+                { expiresIn: '1h' } // Token expires in 1 hour
+            );
 
-                res.status(200).send({
-                    message: 'Login successful',
-                    token,
-                    vendor: vendorData, // Send limited vendor data
-                });
-            } else {
-                res.status(401).send({ message: 'Incorrect password!' });
-            }
+            // Prepare vendor data to send to the client
+            const vendorData = {
+                store_id: vendor.store_id,
+                store_name: vendor.store_name,
+                email: vendor.email,
+                brand_type: vendor.brand_type,
+                first_name: vendor.first_name,
+                last_name: vendor.last_name,
+                store_phone: vendor.store_phone,
+            };
+
+            return res.status(200).json({
+                message: 'Login successful',
+                token,
+                vendor: vendorData, // Limited vendor data
+            });
+        } catch (tokenError) {
+            console.error('Error generating token:', tokenError);
+            return res.status(500).json({ message: 'Could not generate authentication token' });
         }
     });
 };

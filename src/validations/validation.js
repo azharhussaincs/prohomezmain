@@ -7,7 +7,6 @@ const productSchema = Joi.object({
     productDescription: Joi.string().required(),
     selectedCategory: Joi.string().required(),
     selectedImages: Joi.array().items(Joi.string()).required(),
-    mainCategory: Joi.string().required(),
 });
 
 export const validateProduct = (productData) => productSchema.validate(productData);

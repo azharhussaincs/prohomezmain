@@ -1,30 +1,31 @@
 import db from '../config/db.js';
+import { executeQuery } from '../reuseable/functions.js';
 import { validateProduct } from '../validations/validation.js';
 
-export const uploadImages = (req, res) => {
+export const uploadImages = async (req, res) => {
     console.log('Received files:', req.files);
 
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: 'No files uploaded.' });
     }
 
-    const images = req.files.map(file => file.filename);
+    try {
+        const images = req.files.map((file) => file.filename);
+        const values = images.map((image) => [image, new Date()]); // Add date
 
-    const values = images.map(image => [image, null]); 
+        const sql = 'INSERT INTO media (image, date) VALUES ?';
+        await executeQuery(sql, [values]); // Use reusable query function
 
-    const sql = 'INSERT INTO `media` (`image`, `date`) VALUES ?';
-
-    db.query(sql, [values], (err, result) => {
-        if (err) {
-            console.error('Database Error:', err);
-            return res.status(500).json({ message: 'Error uploading images.' });
-        }
         return res.json({
-            status: "Success",
-            images: images
+            status: 'Success',
+            images,
         });
-    });
+    } catch (err) {
+        console.error('Error uploading images:', err);
+        return res.status(500).json({ message: 'Failed to upload images.' });
+    }
 };
+
 
 export const getAllImages = (req, res) => {
     const sql = 'SELECT * FROM media';
@@ -35,85 +36,76 @@ export const getAllImages = (req, res) => {
         return res.json(result);
     });
 };
-export const uploadProduct = (req, res) => {
-    const sql = 'SELECT * FROM media';
-    db.query(sql, (err, result) => {
-        if (err) {
-            return res.status(500).json({ message: 'Error fetching media.' });
-        }
-        return res.json(result);
-    });
-};
 
 // Controller to store product details
-export const createProduct = (req, res) => {
-    // Validate incoming request
+export const createProduct = async (req, res) => {
     const { error } = validateProduct(req.body);
     if (error) {
         return res.status(400).json({ message: error.details[0].message });
     }
 
-    // Destructure request body
     const {
         productName,
         productPrice,
-        discountedPrice = null, // Default to null if not provided
+        discountedPrice = null,
         productDescription,
         selectedCategory,
         selectedImages,
-        mainCategory,
     } = req.body;
 
-    // Ensure selectedImages is a valid non-empty array
     if (!Array.isArray(selectedImages) || selectedImages.length === 0) {
         return res.status(400).json({ message: 'Selected images cannot be empty.' });
     }
 
-    // Extract the first image as the feature image and convert images to JSON
     const featureImage = selectedImages[0];
     const imagesJson = JSON.stringify(selectedImages);
 
-    // SQL query to insert product
-    const sql = `
-        INSERT INTO products (
-            productName, 
-            productPrice, 
-            discountedPrice, 
-            productDescription, 
-            selectedCategory, 
-            mainCategory, 
-            selectedImages, 
-            featureImage
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    try {
+        const { store_id } = req.user;
+        const userQuery = `SELECT brand_type FROM vendors WHERE store_id = ?`;
+        const userResult = await executeQuery(userQuery, [store_id]);
 
-    // Execute the query
-    db.query(
-        sql,
-        [
+        if (userResult.length === 0) {
+            return res.status(404).json({ message: 'Vendor not found.' });
+        }
+
+        const { brand_type: brandType } = userResult[0];
+
+        const sql = `
+            INSERT INTO products (
+                productName, 
+                productPrice, 
+                discountedPrice, 
+                productDescription, 
+                selectedCategory, 
+                mainCategory, 
+                selectedImages, 
+                featureImage,
+                storeId
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        const result = await executeQuery(sql, [
             productName,
             productPrice,
             discountedPrice,
             productDescription,
             selectedCategory,
-            mainCategory,
+            brandType,
             imagesJson,
             featureImage,
-        ],
-        (err, result) => {
-            if (err) {
-                console.error('Database error:', err.message);
-                return res.status(500).json({ message: 'Error storing product details. Please try again later.' });
-            }
+            store_id,
+        ]);
 
-            // Success response
-            res.status(201).json({
-                message: 'Product created successfully!',
-                productId: result.insertId,
-            });
-        }
-    );
+        res.status(201).json({
+            message: 'Product created successfully!',
+            productId: result.insertId,
+        });
+    } catch (err) {
+        console.error('Error creating product:', err);
+        res.status(500).json({ message: 'Failed to create product.' });
+    }
 };
+
 
 // Fetch all products
 export const getProducts = (req, res) => {
