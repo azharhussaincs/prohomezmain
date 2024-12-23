@@ -1,20 +1,26 @@
 import db from '../config/db.js';
-import { executeQuery } from '../reuseable/functions.js';
+import { dbQuery, executeQuery } from '../reuseable/functions.js';
 import { validateProduct } from '../validations/validation.js';
+import slugify from 'slugify';
 
+// Store Images
 export const uploadImages = async (req, res) => {
-    console.log('Received files:', req.files);
+
+    // Extract store_id from req.user
+    const { store_id } = req.user;
 
     if (!req.files || req.files.length === 0) {
         return res.status(400).json({ message: 'No files uploaded.' });
     }
 
     try {
+        // Map through files to get filenames and add store_id and date
         const images = req.files.map((file) => file.filename);
-        const values = images.map((image) => [image, new Date()]); // Add date
+        const values = images.map((image) => [image, store_id, new Date()]);
 
-        const sql = 'INSERT INTO media (image, date) VALUES ?';
-        await executeQuery(sql, [values]); // Use reusable query function
+        // Updated SQL query to include store_id column
+        const sql = 'INSERT INTO media (image, store_id, date) VALUES ?';
+        await executeQuery(sql, [values]);
 
         return res.json({
             status: 'Success',
@@ -26,18 +32,27 @@ export const uploadImages = async (req, res) => {
     }
 };
 
-
+// Get All Images
 export const getAllImages = (req, res) => {
-    const sql = 'SELECT * FROM media';
-    db.query(sql, (err, result) => {
+    // Extract store_id from req.user
+    const { store_id } = req.user;
+
+    if (!store_id) {
+        return res.status(400).json({ message: 'Store ID is required.' });
+    }
+
+    const sql = 'SELECT * FROM media WHERE store_id = ?'; // Query with condition
+    db.query(sql, [store_id], (err, result) => {
         if (err) {
+            console.error('Error fetching media:', err);
             return res.status(500).json({ message: 'Error fetching media.' });
         }
-        return res.json(result);
+
+        return res.json(result); // Return filtered images
     });
 };
 
-// Controller to store product details
+// store product details
 export const createProduct = async (req, res) => {
     const { error } = validateProduct(req.body);
     if (error) {
@@ -71,6 +86,19 @@ export const createProduct = async (req, res) => {
 
         const { brand_type: brandType } = userResult[0];
 
+        // Generate a slug
+        let slug = slugify(productName, { lower: true, strict: true });
+
+        // Check if slug already exists
+        const slugQuery = `SELECT COUNT(*) AS count FROM products WHERE slug = ?`;
+        let slugExists = await executeQuery(slugQuery, [slug]);
+
+        // Append a unique suffix if slug already exists
+        if (slugExists[0].count > 0) {
+            const uniqueSuffix = Date.now();
+            slug = `${slug}-${uniqueSuffix}`;
+        }
+
         const sql = `
             INSERT INTO products (
                 productName, 
@@ -81,8 +109,10 @@ export const createProduct = async (req, res) => {
                 mainCategory, 
                 selectedImages, 
                 featureImage,
-                storeId
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                storeId,
+                slug,
+                numberOfReviews
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `;
         const result = await executeQuery(sql, [
             productName,
@@ -94,11 +124,14 @@ export const createProduct = async (req, res) => {
             imagesJson,
             featureImage,
             store_id,
+            slug,
+            0, // Initialize numberOfReviews to 0
         ]);
 
         res.status(201).json({
             message: 'Product created successfully!',
             productId: result.insertId,
+            slug,
         });
     } catch (err) {
         console.error('Error creating product:', err);
@@ -106,15 +139,124 @@ export const createProduct = async (req, res) => {
     }
 };
 
-
 // Fetch all products
 export const getProducts = (req, res) => {
-    const sql = 'SELECT * FROM products'; // SQL query to fetch all products
+    const sql = 'SELECT * FROM products';
     db.query(sql, (err, results) => {
         if (err) {
             console.error('Error fetching products:', err);
             return res.status(500).json({ message: 'Failed to fetch products.' });
         }
-        res.status(200).json(results); // Send products as JSON
+        res.status(200).json(results);
     });
+};
+
+// Get Product By ID
+export const getProductBySlug = async (req, res) => {
+  const { slug } = req.params;
+
+  try {
+    const result = await new Promise((resolve, reject) => {
+      db.query('SELECT * FROM products WHERE slug = ?', [slug], (error, results) => {
+        if (error) return reject(error);
+        resolve(results);
+      });
+    });
+
+    if (result.length === 0) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    res.json(result[0]); // Return the first product
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    res.status(500).json({ message: 'Failed to fetch product' });
+  }
+};
+
+// Update Product
+export const updateProduct = async (req, res) => {
+  const { slug } = req.params;
+  const { 
+    productName, 
+    productPrice, 
+    discountedPrice, 
+    productDescription, 
+    selectedCategory, 
+    selectedImages 
+  } = req.body;
+
+  if (!slug) {
+    return res.status(400).json({ message: 'Slug is required.' });
+  }
+
+  // Check if the product exists
+  try {
+    const rows = await dbQuery('SELECT * FROM products WHERE slug = ?', [slug]);
+    const productExists = rows.length > 0 ? rows[0] : null; // Get the first row or null
+
+    if (!productExists) {
+      return res.status(404).json({ message: 'Product not found.' });
+    }
+
+    // Update the product
+    const sql = `
+      UPDATE products 
+      SET 
+        productName = ?, 
+        productPrice = ?, 
+        discountedPrice = ?, 
+        productDescription = ?, 
+        selectedCategory = ?, 
+        selectedImages = ? 
+      WHERE slug = ?`;
+
+    const values = [
+      productName, 
+      productPrice, 
+      discountedPrice || null, 
+      productDescription, 
+      selectedCategory, 
+      JSON.stringify(selectedImages), 
+      slug,
+    ];
+
+    await dbQuery(sql, values);
+
+    res.status(200).json({ message: 'Product updated successfully!' });
+  } catch (error) {
+    console.error('Error updating product:', error);
+    res.status(500).json({ message: 'Failed to update product.' });
+  }
+};
+
+// Delete Product 
+export const deleteProduct = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await db.query('DELETE FROM products WHERE id = ?', [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    res.status(200).json({ message: 'Product deleted successfully!' });
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    res.status(500).json({ message: 'Failed to delete product' });
+  }
+};
+
+// Fetch Vendor products
+export const fetchVendorProducts = async (req, res) => {
+    try {
+        const { store_id } = req.user; 
+        const sql = `SELECT * FROM products WHERE storeId = ?`;
+        const products = await executeQuery(sql, [store_id]);
+
+        res.status(200).json(products);
+    } catch (err) {
+        console.error('Error fetching vendor products:', err);
+        res.status(500).json({ message: 'Failed to fetch vendor products.' });
+    }
 };

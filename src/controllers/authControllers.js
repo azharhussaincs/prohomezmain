@@ -4,10 +4,6 @@ import jwt from 'jsonwebtoken';
 import { validateRegister, validateLogin } from '../validations/authValidation.js';
 
 export const registerVendor = async (req, res) => {
-    // Log the request payload
-    console.log(req.body);
-
-    // Validate request data
     const { error } = validateRegister(req.body);
     if (error) {
         return res.status(400).send({ message: error.details[0].message });
@@ -31,7 +27,6 @@ export const registerVendor = async (req, res) => {
     } = req.body;
 
     try {
-        // Check if storeId already exists
         const checkStoreIdQuery = `SELECT COUNT(*) AS count FROM vendors WHERE store_id = ?`;
         const [checkResult] = await new Promise((resolve, reject) => {
             db.query(checkStoreIdQuery, [storeId], (err, result) => {
@@ -44,10 +39,8 @@ export const registerVendor = async (req, res) => {
             return res.status(400).send({ message: 'Store ID is already taken' });
         }
 
-        // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Insert the vendor into the database
         const query = `
             INSERT INTO vendors 
             (first_name, last_name, store_name, store_id, address1, address2, city, state_county, country, postcode, store_phone, brand_type, password, email)
@@ -87,7 +80,6 @@ export const registerVendor = async (req, res) => {
 
 
 export const loginVendor = (req, res) => {
-    // Validate request data
     const { error } = validateLogin(req.body);
     if (error) {
         return res.status(400).json({ message: error.details[0].message });
@@ -114,18 +106,15 @@ export const loginVendor = (req, res) => {
         }
 
         try {
-            // Create a token with more details if necessary
             const token = jwt.sign(
                 {
                     id: vendor.id,
                     store_id: vendor.store_id,
                     email: vendor.email,
                 },
-                process.env.JWT_SECRET, // Use secret from environment variables
-                { expiresIn: '1h' } // Token expires in 1 hour
+                process.env.JWT_SECRET,
+                { expiresIn: '2h' }
             );
-
-            // Prepare vendor data to send to the client
             const vendorData = {
                 store_id: vendor.store_id,
                 store_name: vendor.store_name,
@@ -139,7 +128,7 @@ export const loginVendor = (req, res) => {
             return res.status(200).json({
                 message: 'Login successful',
                 token,
-                vendor: vendorData, // Limited vendor data
+                vendor: vendorData,
             });
         } catch (tokenError) {
             console.error('Error generating token:', tokenError);
@@ -147,9 +136,6 @@ export const loginVendor = (req, res) => {
         }
     });
 };
-
-
-
 
 // Check Store ID
 export const checkStoreId = async (req, res) => {
