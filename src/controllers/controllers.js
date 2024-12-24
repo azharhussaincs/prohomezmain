@@ -77,14 +77,30 @@ export const createProduct = async (req, res) => {
 
     try {
         const { store_id } = req.user;
-        const userQuery = `SELECT brand_type FROM vendors WHERE store_id = ?`;
+
+        // Fetch vendor details
+        const userQuery = `
+            SELECT brand_type, store_name, store_phone, email, image 
+            FROM vendors 
+            WHERE store_id = ?
+        `;
         const userResult = await executeQuery(userQuery, [store_id]);
 
         if (userResult.length === 0) {
             return res.status(404).json({ message: 'Vendor not found.' });
         }
 
-        const { brand_type: brandType } = userResult[0];
+        const { brand_type: brandType, store_name, store_phone, email, image } = userResult[0];
+        console.log(userResult[0]);
+
+        // Create a vendor details JSON
+        const vendorDetails = JSON.stringify({
+            store_name,
+            store_phone,
+            email,
+            store_id,
+            image,
+        });
 
         // Generate a slug
         let slug = slugify(productName, { lower: true, strict: true });
@@ -111,9 +127,9 @@ export const createProduct = async (req, res) => {
                 featureImage,
                 storeId,
                 slug,
-                numberOfReviews
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `;
+                numberOfReviews,
+                vendorDetails
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
         const result = await executeQuery(sql, [
             productName,
             productPrice,
@@ -126,6 +142,7 @@ export const createProduct = async (req, res) => {
             store_id,
             slug,
             0, // Initialize numberOfReviews to 0
+            vendorDetails,
         ]);
 
         res.status(201).json({
@@ -154,7 +171,6 @@ export const getProducts = (req, res) => {
 // Get Product By ID
 export const getProductBySlug = async (req, res) => {
   const { slug } = req.params;
-
   try {
     const result = await new Promise((resolve, reject) => {
       db.query('SELECT * FROM products WHERE slug = ?', [slug], (error, results) => {
