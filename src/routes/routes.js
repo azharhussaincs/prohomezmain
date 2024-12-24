@@ -1,7 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import { uploadImages, getAllImages, createProduct, getProducts, fetchVendorProducts, updateProduct, deleteProduct, getProductBySlug } from '../controllers/controllers.js';
+import { uploadImages, getAllImages, createProduct, getProducts, fetchVendorProducts, updateProduct, deleteProduct, getProductBySlug, fetchVendorDetails } from '../controllers/controllers.js';
 import { authenticate } from '../middleware/authmiddleware.js';
 
 const router = express.Router();
@@ -30,7 +30,10 @@ router.get('/products/:slug', getProductBySlug);
 
 // Update a product
 router.put('/products/:slug', authenticate, updateProduct);
+
 router.get('/vendor-products', authenticate, fetchVendorProducts);
+
+router.get('/vendor-details', authenticate, fetchVendorDetails);
 
 // Delete a product
 router.delete('/products/:id', authenticate, deleteProduct);

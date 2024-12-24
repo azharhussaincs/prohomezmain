@@ -54,11 +54,11 @@ export const getAllImages = (req, res) => {
 
 // store product details
 export const createProduct = async (req, res) => {
+  console.log(req.body);
     const { error } = validateProduct(req.body);
     if (error) {
         return res.status(400).json({ message: error.details[0].message });
     }
-
     const {
         productName,
         productPrice,
@@ -66,6 +66,9 @@ export const createProduct = async (req, res) => {
         productDescription,
         selectedCategory,
         selectedImages,
+        productBeds,
+        productBaths, 
+        propertyArea
     } = req.body;
 
     if (!Array.isArray(selectedImages) || selectedImages.length === 0) {
@@ -82,8 +85,7 @@ export const createProduct = async (req, res) => {
         const userQuery = `
             SELECT brand_type, store_name, store_phone, email, image 
             FROM vendors 
-            WHERE store_id = ?
-        `;
+            WHERE store_id = ?`;
         const userResult = await executeQuery(userQuery, [store_id]);
 
         if (userResult.length === 0) {
@@ -91,7 +93,6 @@ export const createProduct = async (req, res) => {
         }
 
         const { brand_type: brandType, store_name, store_phone, email, image } = userResult[0];
-        console.log(userResult[0]);
 
         // Create a vendor details JSON
         const vendorDetails = JSON.stringify({
@@ -115,6 +116,17 @@ export const createProduct = async (req, res) => {
             slug = `${slug}-${uniqueSuffix}`;
         }
 
+        // Real estate-specific logic to store bed, bath, sqft as JSON if brand_type is "Real Estate"
+        let realEstateDetails = null;
+        if (brandType === 'Real Estate') {
+            if (productBeds != null && productBaths != null && propertyArea != null) {
+                realEstateDetails = JSON.stringify({ productBeds, productBaths, propertyArea });
+            } else {
+                return res.status(400).json({ message: 'Real Estate details (bed, bath, sqft) must be provided.' });
+            }
+        }
+
+        // Insert product data into database
         const sql = `
             INSERT INTO products (
                 productName, 
@@ -128,8 +140,11 @@ export const createProduct = async (req, res) => {
                 storeId,
                 slug,
                 numberOfReviews,
-                vendorDetails
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                vendorDetails,
+                realEstateDetails
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+
         const result = await executeQuery(sql, [
             productName,
             productPrice,
@@ -143,6 +158,7 @@ export const createProduct = async (req, res) => {
             slug,
             0, // Initialize numberOfReviews to 0
             vendorDetails,
+            realEstateDetails  // Include the real estate details (if available)
         ]);
 
         res.status(201).json({
@@ -274,5 +290,41 @@ export const fetchVendorProducts = async (req, res) => {
     } catch (err) {
         console.error('Error fetching vendor products:', err);
         res.status(500).json({ message: 'Failed to fetch vendor products.' });
+    }
+};
+
+// Fetch Vendor Detail
+export const fetchVendorDetails = async (req, res) => {
+    try {
+        const { store_id } = req.user;  // Extract the store_id from the authenticated user's info
+        
+        // Fetch vendor details based on store_id
+        const sql = `
+            SELECT brand_type, store_name, store_phone, email, image 
+            FROM vendors 
+            WHERE store_id = ?
+        `;
+        const vendorResult = await executeQuery(sql, [store_id]);
+
+        // If the vendor does not exist
+        if (vendorResult.length === 0) {
+            return res.status(404).json({ message: 'Vendor not found.' });
+        }
+
+        // Extract vendor details
+        const { brand_type: brandType, store_name, store_phone, email, image } = vendorResult[0];
+
+        // Send the vendor details as a response
+        return res.status(200).json({
+            store_name,
+            store_phone,
+            email,
+            image,
+            brand_type: brandType,
+        });
+
+    } catch (error) {
+        console.error('Error fetching vendor details:', error);
+        return res.status(500).json({ message: 'Failed to fetch vendor details' });
     }
 };

@@ -115,20 +115,10 @@ export const loginVendor = (req, res) => {
                 process.env.JWT_SECRET,
                 { expiresIn: '2h' }
             );
-            const vendorData = {
-                store_id: vendor.store_id,
-                store_name: vendor.store_name,
-                email: vendor.email,
-                brand_type: vendor.brand_type,
-                first_name: vendor.first_name,
-                last_name: vendor.last_name,
-                store_phone: vendor.store_phone,
-            };
 
             return res.status(200).json({
                 message: 'Login successful',
                 token,
-                vendor: vendorData,
             });
         } catch (tokenError) {
             console.error('Error generating token:', tokenError);
