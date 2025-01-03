@@ -1,6 +1,6 @@
 import db from '../config/db.js';
 import { dbQuery, executeQuery } from '../reuseable/functions.js';
-import { validateProduct } from '../validations/validation.js';
+import { orderValidationSchema, validateProduct } from '../validations/validation.js';
 import slugify from 'slugify';
 
 // Store Images
@@ -68,7 +68,8 @@ export const createProduct = async (req, res) => {
         selectedImages,
         productBeds,
         productBaths, 
-        propertyArea
+        propertyArea,
+        selectedAmenities
     } = req.body;
 
     if (!Array.isArray(selectedImages) || selectedImages.length === 0) {
@@ -80,6 +81,7 @@ export const createProduct = async (req, res) => {
 
     try {
         const { store_id } = req.user;
+        const amenitiesJson = selectedAmenities ? JSON.stringify(selectedAmenities) : null;
 
         // Fetch vendor details
         const userQuery = `
@@ -141,8 +143,9 @@ export const createProduct = async (req, res) => {
                 slug,
                 numberOfReviews,
                 vendorDetails,
-                realEstateDetails
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                realEstateDetails, 
+                amenities
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 
         const result = await executeQuery(sql, [
@@ -158,7 +161,8 @@ export const createProduct = async (req, res) => {
             slug,
             0, // Initialize numberOfReviews to 0
             vendorDetails,
-            realEstateDetails  // Include the real estate details (if available)
+            realEstateDetails,
+            amenitiesJson
         ]);
 
         res.status(201).json({
@@ -328,3 +332,100 @@ export const fetchVendorDetails = async (req, res) => {
         return res.status(500).json({ message: 'Failed to fetch vendor details' });
     }
 };
+
+// Function to generate a unique 6-character order ID
+const generateOrderId = () => {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const randomLetters = letters.charAt(Math.floor(Math.random() * letters.length)) +
+                        letters.charAt(Math.floor(Math.random() * letters.length));
+  const randomNumbers = Math.floor(1000 + Math.random() * 9000); // Generates a 4-digit number
+  return `${randomLetters}${randomNumbers}`;
+};
+
+export const checkoutOrder = async (req, res) => {
+  const { error } = orderValidationSchema.validate(req.body, { abortEarly: false });
+  if (error) {
+      const errorMessages = error.details.map((err) => err.message);
+      return res.status(400).json({ message: errorMessages });
+  }
+
+  const { clientDetails, cartItems, totalCost } = req.body;
+
+  try {
+      // Validate product slugs and fetch corresponding vendor details
+      const slugs = cartItems.map((item) => item.slug);
+      const slugQuery = `
+          SELECT slug, productName, store_id, store_name 
+          FROM products p
+          JOIN vendors v ON store_id = store_id
+          WHERE slug IN (?)
+      `;
+      const productRows = await executeQuery(slugQuery, [slugs]);
+
+      const existingSlugs = new Map(
+          productRows.map((row) => [
+              row.slug,
+              { productName: row.productName, store_id: row.store_id, store_name: row.store_name },
+          ])
+      );
+
+      const missingProducts = cartItems.filter((item) => !existingSlugs.has(item.slug));
+      if (missingProducts.length > 0) {
+          const missingNames = missingProducts.map((item) => item.productName).join(", ");
+          return res.status(400).json({ message: `The following products are not available: ${missingNames}` });
+      }
+
+      const vendorDetails = [];
+      for (const item of cartItems) {
+          const productData = existingSlugs.get(item.slug);
+          vendorDetails.push({
+              store_id: productData.store_id,
+              store_name: productData.store_name,
+              productName: productData.productName,
+          });
+      }
+      // Generate a unique order ID
+      const orderId = generateOrderId();
+      // Save the order in the database
+      const orderQuery = `
+          INSERT INTO orders (order_id, client_details, cart_items, total_cost, vendor_details, order_date)
+          VALUES (?, ?, ?, ?, ?, NOW())
+      `;
+      const orderResult = await executeQuery(orderQuery, [
+          orderId,
+          JSON.stringify(clientDetails),
+          JSON.stringify(cartItems),
+          totalCost,
+          JSON.stringify(vendorDetails),
+      ]);
+
+      res.status(201).json({ message: "Order placed successfully!", orderId });
+  } catch (error) {
+      console.error("Error saving order:", error);
+      res.status(500).json({ message: "Failed to place order" });
+  }
+};
+
+export const getOrdersByVendor = async (req, res) => {
+  const { store_id } = req.user; // Extract store_id from authenticated vendor
+  console.log(store_id)
+  try {
+      const query = `
+          SELECT order_id, client_details, cart_items, total_cost, order_date, vendor_details
+          FROM orders
+          WHERE JSON_CONTAINS(vendor_details, JSON_OBJECT('store_id', ?))
+          ORDER BY order_date DESC
+      `;
+
+      const orders = await executeQuery(query, [store_id]);
+      if (orders.length === 0) {
+          return res.status(404).json({ message: "No orders found for this vendor" });
+      }
+
+      res.status(200).json(orders);
+  } catch (error) {
+      console.error("Error fetching vendor orders:", error);
+      res.status(500).json({ message: "Failed to fetch orders" });
+  }
+};
+
