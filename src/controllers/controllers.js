@@ -94,7 +94,7 @@ export const createProduct = async (req, res) => {
             FROM vendors 
             WHERE store_id = ?`;
         const userResult = await executeQuery(userQuery, [store_id]);
-
+        console.log(userResult)
         if (userResult.length === 0) {
             return res.status(404).json({ message: 'Vendor not found.' });
         }
