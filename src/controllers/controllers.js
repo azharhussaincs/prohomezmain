@@ -36,12 +36,18 @@ export const uploadImages = async (req, res) => {
 export const getAllImages = (req, res) => {
     // Extract store_id from req.user
     const { store_id } = req.user;
+    const isAdmin = req.query.isAdmin;
 
     if (!store_id) {
         return res.status(400).json({ message: 'Store ID is required.' });
     }
+    let sql;
+    if(isAdmin == 1){
+        sql = 'SELECT * FROM media';
+    } else{
+        sql = 'SELECT * FROM media WHERE store_id = ?';
+    }
 
-    const sql = 'SELECT * FROM media WHERE store_id = ?'; // Query with condition
     db.query(sql, [store_id], (err, result) => {
         if (err) {
             console.error('Error fetching media:', err);
@@ -54,7 +60,6 @@ export const getAllImages = (req, res) => {
 
 // store product details
 export const createProduct = async (req, res) => {
-  console.log(req.body);
     const { error } = validateProduct(req.body);
     if (error) {
         return res.status(400).json({ message: error.details[0].message });
@@ -286,8 +291,14 @@ export const deleteProduct = async (req, res) => {
 // Fetch Vendor products
 export const fetchVendorProducts = async (req, res) => {
     try {
+        const isAdmin = req.query.isAdmin;
         const { store_id } = req.user; 
-        const sql = `SELECT * FROM products WHERE storeId = ?`;
+        let sql = ``;
+        if(isAdmin == 1){
+            sql = `SELECT * FROM products`;
+        } else {
+            sql = `SELECT * FROM products WHERE storeId = ?`;
+        }
         const products = await executeQuery(sql, [store_id]);
 
         res.status(200).json(products);
@@ -304,7 +315,7 @@ export const fetchVendorDetails = async (req, res) => {
         
         // Fetch vendor details based on store_id
         const sql = `
-            SELECT brand_type, store_name, store_phone, email, image 
+            SELECT brand_type, store_name, store_phone, email, image, isAdmin
             FROM vendors 
             WHERE store_id = ?
         `;
@@ -316,7 +327,7 @@ export const fetchVendorDetails = async (req, res) => {
         }
 
         // Extract vendor details
-        const { brand_type: brandType, store_name, store_phone, email, image } = vendorResult[0];
+        const { brand_type: brandType, store_name, store_phone, email, image, isAdmin } = vendorResult[0];
 
         // Send the vendor details as a response
         return res.status(200).json({
@@ -325,6 +336,7 @@ export const fetchVendorDetails = async (req, res) => {
             email,
             image,
             brand_type: brandType,
+            isAdmin,
         });
 
     } catch (error) {
@@ -333,7 +345,41 @@ export const fetchVendorDetails = async (req, res) => {
     }
 };
 
-// Function to generate a unique 6-character order ID
+export const fetchAllVendors = async (req, res) => {
+    try {
+        const isAdmin = req.query.isAdmin;
+        let sql;
+        if(isAdmin == 1){
+            sql = `SELECT address1, address2, brand_type, city, country, email, first_name, image, isAdmin, last_name, postcode, state_county, store_id, store_name, store_phone, vendor_status
+            FROM vendors`;
+        } 
+        const vendors = await executeQuery(sql);
+
+        // Respond with the fetched vendors
+        res.status(200).json(vendors);
+    } catch (err) {
+        console.error('Error fetching vendors:', err);
+        res.status(500).json({ message: 'Failed to fetch vendors.' });
+    }
+};
+
+// Controller to update vendor access status
+export const updateVendorAccess = async (req, res) => {
+    const {vendorId, newStatus} = req.body;
+
+    if (!vendorId || newStatus === undefined) {
+        return res.status(400).json({ message: 'store_id and newStatus are required' });
+    }
+    try {
+        const query = 'UPDATE vendors SET vendor_status = ? WHERE store_id = ?';
+        await db.query(query, [newStatus, vendorId]);
+        res.status(200).json({ message: 'Vendor access status updated successfully' });
+    } catch (error) {
+        console.error('Error updating vendor access status:', error);
+        res.status(500).json({ message: 'Failed to update vendor access status' });
+    }
+};
+
 const generateOrderId = () => {
   const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
   const randomLetters = letters.charAt(Math.floor(Math.random() * letters.length)) +
@@ -407,15 +453,24 @@ export const checkoutOrder = async (req, res) => {
 };
 
 export const getOrdersByVendor = async (req, res) => {
-  const { store_id } = req.user; // Extract store_id from authenticated vendor
-  console.log(store_id)
+    const isAdmin = req.query.isAdmin;
+  const { store_id } = req.user; 
   try {
-      const query = `
-          SELECT order_id, client_details, cart_items, total_cost, order_date, vendor_details
-          FROM orders
-          WHERE JSON_CONTAINS(vendor_details, JSON_OBJECT('store_id', ?))
-          ORDER BY order_date DESC
-      `;
+    let query;
+    if(isAdmin == 1){
+        query = `
+            SELECT order_id, client_details, cart_items, total_cost, order_date, vendor_details
+            FROM orders
+            ORDER BY order_date DESC
+        `;
+    } else{
+        query = `
+            SELECT order_id, client_details, cart_items, total_cost, order_date, vendor_details
+            FROM orders
+            WHERE JSON_CONTAINS(vendor_details, JSON_OBJECT('store_id', ?))
+            ORDER BY order_date DESC
+        `;
+    }
 
       const orders = await executeQuery(query, [store_id]);
       if (orders.length === 0) {

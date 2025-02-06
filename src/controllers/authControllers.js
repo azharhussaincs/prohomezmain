@@ -99,10 +99,16 @@ export const loginVendor = (req, res) => {
         }
 
         const vendor = results[0];
-        const isPasswordMatch = await bcrypt.compare(password, vendor.password);
 
+        
+        const isPasswordMatch = await bcrypt.compare(password, vendor.password);
+        
         if (!isPasswordMatch) {
             return res.status(401).json({ message: 'Invalid email or password!' });
+        }
+        // Check if vendor status is 'active'
+        if (vendor.vendor_status !== 'active' && vendor.isAdmin == 0) {
+            return res.status(403).json({ message: 'Vendor account is not active. Please contact support at (+92) 315 5625755.' });
         }
 
         try {
